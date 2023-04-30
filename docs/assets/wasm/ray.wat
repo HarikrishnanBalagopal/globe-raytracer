@@ -6,6 +6,7 @@
 (import "Math" "random" (func $random (result f64)))
 (import "Math" "sin" (func $sin (param f32) (result f32)))
 (import "Math" "asin" (func $asin (param f32) (result f32)))
+(import "Math" "cos" (func $cos (param f32) (result f32)))
 (import "Math" "atan2" (func $atan2 (param f32) (param f32) (result f32)))
 (import "console" "log" (func $log (param f32)))
 (import "constants" "W" (global $W i32))
@@ -13,9 +14,9 @@
 (import "constants" "fW" (global $fW f32))
 (import "constants" "fH" (global $fH f32))
 
-(import "constants" "camX" (global $camX f32))
-(import "constants" "camY" (global $camY f32))
-(import "constants" "camZ" (global $camZ f32))
+(import "constants" "camX" (global $_camX f32))
+(import "constants" "camY" (global $_camY f32))
+(import "constants" "camZ" (global $_camZ f32))
 (import "constants" "camFocalLength" (global $camFocalLength f32))
 
 (import "constants" "targetX" (global $targetX f32))
@@ -27,6 +28,11 @@
 ;; [53760, 268800)  => canvasData, 4 bytes per pixel.
 ;; [268800, 268948) => Palette data, RGBA.
 (memory (export "mem") 26)
+
+(global $camX (mut f32) (f32.const 0))
+(global $camY (mut f32) (f32.const 0))
+(global $camZ (mut f32) (f32.const 0))
+
 (global $fR f32 (f32.const 0.5))
 
 (global $SPHERE_X f32 (f32.const 0))
@@ -52,8 +58,17 @@
   "\FF\FF\FF\FF")
 ;)
 
+;; reset camera position
+(func $resetCamPosition
+  (global.set $camX (global.get $_camX))
+  (global.set $camY (global.get $_camY))
+  (global.set $camZ (global.get $_camZ))
+)
+
 (func $setup
   (local $i i32)
+
+  call $resetCamPosition
 
   ;; Fill bottom row with color 36, (R=0xff, G=0xff, B=0xff).
   (local.set $i (i32.const 320))
@@ -193,6 +208,48 @@
       (local.get $cx) (local.get $cy) (local.get $cz)
     )
   )
+)
+
+(func $rot2x2 (param $angle f32) (param $x f32) (param $y f32) (result f32 f32)
+(;
+column vectors are X and Y axes
+1 0  ->  cos(angle) -sin(angle)
+0 1      sin(angle)  cos(angle)
+;)
+  (f32.add
+    (f32.mul (local.get $x) (call $cos (local.get $angle)))
+    (f32.mul (local.get $y) (f32.mul (call $sin (local.get $angle)) (f32.const -1)))
+  )
+  (f32.add
+    (f32.mul (local.get $x) (call $sin (local.get $angle)))
+    (f32.mul (local.get $y) (call $cos (local.get $angle)))
+  )
+)
+
+;; rotate in the vertical plane
+(func $v3rotYZ
+  (param $x f32) (param $y f32) (param $z f32)
+  (param $angle f32)
+  (result f32 f32 f32)
+  (call $rot2x2 (local.get $angle) (local.get $y) (local.get $z))
+  local.set $z
+  local.set $y
+
+  local.get $x ;; old value of x
+  local.get $y ;; new value of y
+  local.get $z ;; new value of z
+)
+
+;; rotate in the horizontal plane
+(func $v3rotXZ
+  (param $x f32) (param $y f32) (param $z f32)
+  (param $angle f32)
+  (result f32 f32 f32)
+  (call $rot2x2 (local.get $angle) (local.get $x) (local.get $z))
+  local.set $z
+  ;; new value of x is already on the stack
+  local.get $y ;; old value of y
+  local.get $z ;; new value of z
 )
 
 ;; https://en.wikipedia.org/wiki/Line%E2%80%93sphere_intersection
@@ -357,7 +414,41 @@
 
   (local.set $yaxis_y (f32.const 1)) ;; y axis is pointing straight up
 
-  ;; Update the fire.
+  ;; rotating camera
+
+  ;; (global.set $camX (f32.const 0))
+  ;; (global.set $camY (f32.const 0))
+  ;; (global.set $camZ (f32.const 4))
+
+  ;; (call $v3rotYZ
+  ;;   (global.get $camX) (global.get $camY) (global.get $camZ)
+  ;;   (f32.const 0.01)
+  ;; )
+  ;; global.set $camZ
+  ;; global.set $camY
+  ;; global.set $camX
+
+  call $resetCamPosition
+  (call $v3rotXZ
+    (global.get $camX) (global.get $camY) (global.get $camZ)
+    (f32.load (i32.const 819200))
+    ;; (f32.const 0.01)
+  )
+  global.set $camZ
+  global.set $camY
+  global.set $camX
+
+  (call $v3rotYZ
+    (global.get $camX) (global.get $camY) (global.get $camZ)
+    (f32.load (i32.const 819204))
+    ;; (f32.const 0.01)
+  )
+  global.set $camZ
+  global.set $camY
+  global.set $camX
+
+  ;; (global.set $camZ (f32.add (global.get $camZ) (f32.const 0.1)))
+  ;; render the frame
   (loop $yloop
     (local.set $x (i32.const 0))
     (loop $xloop
@@ -386,19 +477,19 @@
       local.set $ux
 
       ;; calculate the x axis
-      (call $v3cross
+      (call $v3norm (call $v3cross
         (local.get $ux) (local.get $uy) (local.get $uz)
         (local.get $yaxis_x) (local.get $yaxis_y) (local.get $yaxis_z)
-      )
+      ))
       local.set $xaxis_z
       local.set $xaxis_y
       local.set $xaxis_x
 
       ;; calculate the y axis
-      (call $v3cross
+      (call $v3norm (call $v3cross
         (local.get $xaxis_x) (local.get $xaxis_y) (local.get $xaxis_z)
         (local.get $ux) (local.get $uy) (local.get $uz)
-      )
+      ))
       local.set $yaxis_z
       local.set $yaxis_y
       local.set $yaxis_x
@@ -509,7 +600,8 @@
               (call $atan2 (local.get $norm_z) (local.get $norm_x))
               (f32.mul (global.get $PI) (f32.const 2))
             )
-            (f32.add (f32.const 0.5) (f32.mul (local.get $time) (f32.const -1)))
+            (f32.const 0.5)
+            ;; (f32.add (f32.const 0.5) (f32.mul (local.get $time) (f32.const -1)))
           )
         )
         ;; (local.set $tex_v

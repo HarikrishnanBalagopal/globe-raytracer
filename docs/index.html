@@ -56,6 +56,13 @@
       console.log('tempGetWorldMap end');
     }
 
+    function getMousePos(e) {
+      // e = Mouse click event.
+      const rect = e.target.getBoundingClientRect();
+      const x = e.clientX - rect.left; //x position within the element.
+      const y = e.clientY - rect.top;  //y position within the element.
+      return { x, y };
+    }
     async function main() {
       // tempGetWorldMap();
       const W = 640;
@@ -65,7 +72,7 @@
         console,
         constants: {
           W, H, fW: W, fH: H,
-          camX: 0, camY: 0, camZ: 3, camFocalLength: 1,
+          camX: 0, camY: 0, camZ: 4, camFocalLength: 1,
           targetX: 0, targetY: 0, targetZ: 0,
         },
       };
@@ -73,10 +80,23 @@
       const { instance } = await WebAssembly.instantiateStreaming(fetch('assets/wasm/ray.wasm'), importObject);
       const PAGE_SIZE = 64 * 1024;
       const canvasData = new Uint8Array(instance.exports.mem.buffer, 13 * PAGE_SIZE, W * H * 4);
+      const metadataView = new DataView(instance.exports.mem.buffer, W * H * 4, 2 * 4); // 2 float32 values
 
       const canvas = document.querySelector('#canvas-output');
       canvas.width = W;
       canvas.height = H;
+      let dragging = false;
+      canvas.addEventListener('mousedown', e => dragging = true);
+      canvas.addEventListener('mouseup', e => dragging = false);
+      canvas.addEventListener('mousemove', e => {
+        if (!dragging) return;
+        const { x, y } = getMousePos(e);
+        // console.log(x, y);
+        metadataView.setFloat32(0, 2 * (1 - x / W) - 1, true);
+        metadataView.setFloat32(4, 2 * (1 - y / H) - 1, true);
+      });
+
+      // canvas.addEventListener('mousemove', e => console.log(e));
       const context = canvas.getContext('2d');
       const imageData = context.createImageData(W, H);
 
