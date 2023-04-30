@@ -1,5 +1,9 @@
 # Globe Raytracer using Wasm
 
+See it running at https://haribala.dev/globe-raytracer
+
+![globe](https://user-images.githubusercontent.com/20921177/235357150-420b5ea2-2e22-4e53-aa1d-213744f46220.gif)
+
 A globe of the Earth using Web Assembly.  
 
 The WAT code is hand-written and it is compiled to Wasm using the `wat2wasm` tool from the WebAssembly Binary Toolkit https://github.com/WebAssembly/wabt  
