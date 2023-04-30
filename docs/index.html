@@ -1,0 +1,107 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8">
+  <meta http-equiv="X-UA-Compatible" content="IE=edge">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Document</title>
+</head>
+
+<body>
+  <!-- <canvas id="canvas-temp"></canvas> -->
+  <canvas id="canvas-output"></canvas>
+  <button id="button-snapshot">snapshot</button>
+  <script type="module">
+    function download_file(name, contents, mime_type) {
+      mime_type = mime_type || "text/plain";
+      var blob = new Blob([contents], { type: mime_type });
+      var dlink = document.createElement('a');
+      dlink.download = name;
+      dlink.href = window.URL.createObjectURL(blob);
+      dlink.onclick = function (e) {
+        // revokeObjectURL needs a delay to work properly
+        var that = this;
+        setTimeout(function () {
+          window.URL.revokeObjectURL(that.href);
+        }, 1500);
+      };
+
+      dlink.click();
+      dlink.remove();
+    }
+    function tempGetWorldMap() {
+      console.log('tempGetWorldMap start');
+      const canvas = document.querySelector('#canvas-temp');
+      const ctx = canvas.getContext('2d');
+      const W = 640;
+      const H = 320;
+      canvas.width = W;
+      canvas.height = H;
+      ctx.fillStyle = 'black';
+      ctx.fillRect(0, 0, W, H);
+      const img = document.createElement('img');
+      img.src = '/assets/images/world-map.jpeg';
+      img.onload = () => {
+        // document.body.appendChild(img);
+        console.log('img.width, img.height', img.width, img.height);
+        ctx.drawImage(img, 0, 0, img.width, img.height, 0, 0, W, H);
+        const imgData = ctx.getImageData(0, 0, W, H);
+        console.log('imgData', imgData);
+        const result = Array.from(imgData.data).map(x => '\\' + x.toString(16).padStart(2, '0')).join('');
+        // console.log(result);
+        console.log(result.length);
+        download_file('image.txt', result);
+      }
+      console.log('tempGetWorldMap end');
+    }
+
+    async function main() {
+      // tempGetWorldMap();
+      const W = 640;
+      const H = 320;
+      const importObject = {
+        Math,
+        console,
+        constants: {
+          W, H, fW: W, fH: H,
+          camX: 0, camY: 0, camZ: 3, camFocalLength: 1,
+          targetX: 0, targetY: 0, targetZ: 0,
+        },
+      };
+      // console.log('importObject', importObject);
+      const { instance } = await WebAssembly.instantiateStreaming(fetch('assets/wasm/ray.wasm'), importObject);
+      const PAGE_SIZE = 64 * 1024;
+      const canvasData = new Uint8Array(instance.exports.mem.buffer, 13 * PAGE_SIZE, W * H * 4);
+
+      const canvas = document.querySelector('#canvas-output');
+      canvas.width = W;
+      canvas.height = H;
+      const context = canvas.getContext('2d');
+      const imageData = context.createImageData(W, H);
+
+      const buttonSnapshot = document.querySelector('#button-snapshot');
+      let getSnapshot = false;
+      buttonSnapshot.addEventListener('click', () => getSnapshot = true);
+
+      let running = false;
+      const update = (_t) => {
+        const t = _t * 0.0001;
+        requestAnimationFrame(update);
+        if (running) return;
+        running = true;
+        instance.exports.run(t);
+        if (getSnapshot) { getSnapshot = false; console.log(canvasData); }
+        imageData.data.set(canvasData);
+        context.putImageData(imageData, 0, 0);
+        running = false;
+      };
+
+      update();
+    }
+    main().catch(console.error);
+  </script>
+</body>
+
+</html>
+<!DOCTYPE html>
